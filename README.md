@@ -1,74 +1,171 @@
-<<<<<<< HEAD
-# Getting Started with Create React App
+# Event Schedule System
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+A web-based event management platform for scheduling, managing, and registering for events. Built with React and designed for university event coordination.
 
-## Available Scripts
+## Team Members - Group 10
 
-In the project directory, you can run:
+| Name | Student ID | Role |
+|------|------------|------|
+| Hew Wee Bo | 251UC250HB | Event Manager |
+| Jeremy Puah Rui Zhe | 252UC253W6 | Student |
+| Muhammad Nur Akmal Bin Ahmad Mokhtaza | 252UC254BP | On-site Manager |
+| Shanjif Cakravrthi | 251UC250J7 | Administrator |
 
-### `npm start`
+## Project Overview
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+This system solves the challenge of event management by providing a centralized platform where:
+- Students and guests can easily browse and register for events
+- Event managers can create schedules and allocate venues
+- Administrators can manage registrations and send announcements
+- On-site managers can approve venue requests and manage schedules
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+### Problem Statement
 
-### `npm test`
+Event management faces challenges due to lack of scheduling systems, venue conflicts, and coordination issues. This platform provides:
+- Real-time venue availability checking
+- Automated clash detection for overlapping events
+- Centralized approval workflows
+- Efficient time and venue utilization
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+## Features
 
-### `npm run build`
+### For Students/Guests
+- 📅 View all available events
+- ✅ Register for events with one click
+- 🔔 Clash detection to prevent double-booking
+- 📱 View personal schedule of registered events
+- 🗓️ Calendar and list view options
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+### For Event Managers
+- ➕ Create and schedule new events
+- 🏢 Allocate venues and check availability
+- ✏️ Edit existing event details
+- 📊 Manage event capacity
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+### For Administrators
+- 📥 Export event history and reports
+- 👥 Manage event registrations
+- 📢 Send announcements to students
+- 📈 View system-wide statistics
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+### For On-site Managers
+- 👀 View complete venue schedules
+- ✔️ Approve or reject venue requests
+- 🔓 Enable venues for booking
+- 📍 Manage venue availability periods
 
-### `npm run eject`
+## 🚀 Getting Started
 
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
+### Prerequisites
+- Node.js (v14 or higher)
+- npm or yarn package manager
 
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+### Installation
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
+1. Clone the repository
+```bash
+git clone https://github.com/UnderscorePan/EventScheduler.git
+cd EventScheduler
+```
 
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
+2. Install dependencies
+```bash
+npm install
+```
 
-## Learn More
+3. Install required packages
+```bash
+npm install lucide-react date-fns
+```
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+4. Start the development server
+```bash
+npm start
+```
 
-To learn React, check out the [React documentation](https://reactjs.org/).
+5. Open your browser and navigate to `http://localhost:3000`
 
-### Code Splitting
+## 🛠️ Technologies Used
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
+- **Frontend Framework:** React.js
+- **Styling:** Tailwind CSS
+- **Icons:** Lucide React
+- **Date Handling:** date-fns
+- **Backend (Planned):** Flask (Python)
+- **Database (Planned):** PostgreSQL or SQLite
 
-### Analyzing the Bundle Size
+## 📁 Project Structure
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
+```
+event-schedule/
+├── public/
+│   └── index.html          # Main HTML file with Tailwind CDN
+├── src/
+│   ├── components/         # React components (to be added)
+│   ├── App.js             # Main application component
+│   ├── index.js           # React entry point
+│   └── index.css          # Global styles
+├── package.json           # Project dependencies
+└── README.md             # Project documentation
+```
 
-### Making a Progressive Web App
+## 👤 User Roles
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
+The system supports four distinct user roles:
 
-### Advanced Configuration
+1. **Student/Guest** - Register for events and view schedules
+2. **Event Manager** - Create and manage event schedules
+3. **Administrator** - Oversee registrations and communications
+4. **On-site Manager** - Control venue availability and approvals
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
+## 🎯 Use Cases
 
-### Deployment
+- **EM-1:** Create Schedule
+- **EM-2:** Allocate Venue/Space
+- **AD-1:** Export Event History
+- **AD-2:** Manage Registrations
+- **AD-3:** Send Announcements
+- **OSM-1:** View Schedule
+- **OSM-2:** Enable Venue
+- **OSM-3:** Manage Venue Requests
+- **ST-1:** Register in Event
+- **ST-2:** View Registered Schedule
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
+## 📅 Project Timeline
 
-### `npm run build` fails to minify
+Project development follows a structured schedule with milestones for:
+- Requirements gathering and analysis
+- System design and architecture
+- Frontend development
+- Backend integration
+- Testing and deployment
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
-=======
-# EventScheduler
->>>>>>> 85af9056ef3dde1d12fa2c55d2b82022b6346b01
+## 🔜 Upcoming Features
+
+- [ ] User authentication and login system
+- [ ] Backend API integration with Flask
+- [ ] Database implementation
+- [ ] Email notifications for event updates
+- [ ] Advanced filtering and search
+- [ ] Mobile-responsive design improvements
+- [ ] Event categories and tags
+- [ ] Venue capacity visualization
+- [ ] Export functionality for personal schedules
+
+## 🤝 Contributing
+
+This is an academic project developed by Group 10. For questions or suggestions, please contact the team members.
+
+## 📝 License
+
+This project is created for educational purposes as part of a university course assignment.
+
+## 📞 Contact
+
+For any queries regarding this project, please reach out to the team members listed above.
+
+---
+
+**Version:** 1.0  
+**Last Updated:** December 2025  
+**Course Project:** Schedule Management System

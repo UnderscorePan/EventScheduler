@@ -1,41 +1,26 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Calendar, Clock, MapPin, Users, Plus, List, Grid } from 'lucide-react';
 
 function App() {
   const [userRole, setUserRole] = useState('student'); // student, event_manager, admin, onsite_manager
   const [view, setView] = useState('list'); // list or calendar
-  const [events, setEvents] = useState([
-    {
-      id: 1,
-      title: 'Tech Workshop',
-      date: '2025-01-15',
-      time: '14:00',
-      venue: 'Conference Room A',
-      capacity: 50,
-      registered: 23,
-      description: 'Learn about modern web development'
-    },
-    {
-      id: 2,
-      title: 'Career Fair',
-      date: '2025-01-18',
-      time: '10:00',
-      venue: 'Main Hall',
-      capacity: 200,
-      registered: 156,
-      description: 'Meet potential employers'
-    },
-    {
-      id: 3,
-      title: 'Guest Lecture',
-      date: '2025-01-20',
-      time: '15:30',
-      venue: 'Lecture Hall B',
-      capacity: 100,
-      registered: 67,
-      description: 'Industry expert sharing insights'
-    }
-  ]);
+  const [events, setEvents] = useState([])
+
+  useEffect(() => {
+  fetch("http://localhost/event-api/events.php")
+    .then(response => {
+      if (!response.ok) {
+        throw new Error("Failed to fetch events");
+      }
+      return response.json();
+    })
+    .then(data => {
+      setEvents(data);
+    })
+    .catch(error => {
+      console.error(error);
+    });
+}, []);
 
   const [registeredEvents, setRegisteredEvents] = useState([1]);
 

@@ -7,7 +7,7 @@ function App() {
   const [events, setEvents] = useState([])
 
   useEffect(() => {
-  fetch("http://localhost/event-api/events.php")
+  fetch("http://elec-refill.with.playit.plus:27077/event-api/events.php")
     .then(response => {
       if (!response.ok) {
         throw new Error("Failed to fetch events");

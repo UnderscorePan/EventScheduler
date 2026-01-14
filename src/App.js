@@ -29,26 +29,69 @@ function App() {
       console.error(error);
     });
 }, []);
+import { Calendar, Clock, MapPin, Users, Plus, List, Grid } from 'lucide-react';
 
-  const [registeredEvents, setRegisteredEvents] = useState([1]);
+function App() {
+  const [userRole, setUserRole] = useState('student'); // student, event_manager, admin, onsite_manager
+  const [view, setView] = useState('list'); // list or calendar
+  const [events, setEvents] = useState([])
+
+  useEffect(() => {
+  fetch("http://elec-refill.with.playit.plus:27077/event-api/events.php")
+    .then(response => {
+      if (!response.ok) {
+        throw new Error("Failed to fetch events");
+      }
+      return response.json();
+    })
+    .then(data => {
+      setEvents(data);
+    })
+    .catch(error => {
+      console.error(error);
+    });
+  }, []);
+
+  const [registeredEvents, setRegisteredEvents] = useState([]);
+
+  useEffect(() => {
+  fetch("http://localhost/event-api/registeredevent.php", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded"
+    },
+    body: new URLSearchParams({
+      student_id: "S102312"  //TEMP STUDENT ID CHANGE WHEN SESSION IS ADDED
+    }).toString()
+  })
+    .then(res => res.json())
+    .then(data => {
+      if (data.success) {
+        setRegisteredEvents(data.eventIds);
+      }
+    });
+}, []);
 
   const handleRegister = (eventId) => {
-    if (registeredEvents.includes(eventId)) {
-      alert('You are already registered for this event!');
-      return;
-    }
-    
-    const event = events.find(e => e.id === eventId);
-    if (event.registered >= event.capacity) {
-      alert('Event is full!');
-      return;
-    }
-
-    setRegisteredEvents([...registeredEvents, eventId]);
-    setEvents(events.map(e => 
-      e.id === eventId ? { ...e, registered: e.registered + 1 } : e
-    ));
-    alert('Successfully registered!');
+    fetch("http://localhost/event-api/registerrequest.php", {
+    method: "POST",
+    headers: {
+    "Content-Type": "application/x-www-form-urlencoded"
+    },
+    body: new URLSearchParams({
+    student_id: "S102312",
+    event_id: eventId
+    }).toString()
+  })
+    .then(res => res.json())
+    .then(data => {
+      if (data.success) {
+        alert("Registered successfully!");
+        setRegisteredEvents(prev => [...prev, eventId]);
+      } else {
+        alert(data.message);
+      }
+    });
   };
 
   const EventCard = ({ event }) => {

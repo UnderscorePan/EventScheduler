@@ -2,8 +2,12 @@ import React, { useState, useEffect } from 'react';
 import LoginPage from './login/LoginPage';
 import { Calendar, Clock, MapPin, Users, Plus, List } from 'lucide-react';
 
+
 function App() {
   const [userRole, setUserRole] = useState('student'); // student, event_manager, admin, onsite_manager
+  const [view, setView] = useState('list'); // list or calendar
+  const [events, setEvents] = useState([])
+
   const [authenticated, setAuthenticated] = useState(() => {
     try {
       return localStorage.getItem('auth') === 'true';
@@ -11,30 +15,6 @@ function App() {
       return false;
     }
   });
-  const [view, setView] = useState('list'); // list or calendar
-  const [events, setEvents] = useState([])
-
-  useEffect(() => {
-  fetch("http://elec-refill.with.playit.plus:27077/event-api/events.php")
-    .then(response => {
-      if (!response.ok) {
-        throw new Error("Failed to fetch events");
-      }
-      return response.json();
-    })
-    .then(data => {
-      setEvents(data);
-    })
-    .catch(error => {
-      console.error(error);
-    });
-}, []);
-import { Calendar, Clock, MapPin, Users, Plus, List, Grid } from 'lucide-react';
-
-function App() {
-  const [userRole, setUserRole] = useState('student'); // student, event_manager, admin, onsite_manager
-  const [view, setView] = useState('list'); // list or calendar
-  const [events, setEvents] = useState([])
 
   useEffect(() => {
   fetch("http://elec-refill.with.playit.plus:27077/event-api/events.php")

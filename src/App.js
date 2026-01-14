@@ -1,4 +1,34 @@
 import React, { useState, useEffect } from 'react';
+import LoginPage from './login/LoginPage';
+import { Calendar, Clock, MapPin, Users, Plus, List } from 'lucide-react';
+
+function App() {
+  const [userRole, setUserRole] = useState('student'); // student, event_manager, admin, onsite_manager
+  const [authenticated, setAuthenticated] = useState(() => {
+    try {
+      return localStorage.getItem('auth') === 'true';
+    } catch (e) {
+      return false;
+    }
+  });
+  const [view, setView] = useState('list'); // list or calendar
+  const [events, setEvents] = useState([])
+
+  useEffect(() => {
+  fetch("http://elec-refill.with.playit.plus:27077/event-api/events.php")
+    .then(response => {
+      if (!response.ok) {
+        throw new Error("Failed to fetch events");
+      }
+      return response.json();
+    })
+    .then(data => {
+      setEvents(data);
+    })
+    .catch(error => {
+      console.error(error);
+    });
+}, []);
 import { Calendar, Clock, MapPin, Users, Plus, List, Grid } from 'lucide-react';
 
 function App() {
@@ -161,13 +191,40 @@ function App() {
     );
   };
 
+  const handleLogin = () => {
+    try {
+      localStorage.setItem('auth', 'true');
+    } catch (e) {
+      // ignore
+    }
+    setAuthenticated(true);
+  };
+
+  const handleLogout = () => {
+    try {
+      localStorage.removeItem('auth');
+    } catch (e) {
+      // ignore
+    }
+    setAuthenticated(false);
+  };
+
+  if (!authenticated) return <LoginPage onLogin={handleLogin} />;
+
   return (
     <div className="min-h-screen bg-gray-100">
       {/* Header */}
       <header className="bg-blue-600 text-white shadow-lg">
         <div className="container mx-auto px-4 py-4">
-          <h1 className="text-3xl font-bold">Event Schedule System</h1>
-          <p className="text-blue-100">Group 10 - Event Management Platform</p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-bold">Event Schedule System</h1>
+              <p className="text-blue-100">Group 10 - Event Management Platform</p>
+            </div>
+            <div>
+              <button onClick={handleLogout} className="bg-white text-blue-600 px-3 py-1 rounded-md font-semibold">Logout</button>
+            </div>
+          </div>
         </div>
       </header>
 

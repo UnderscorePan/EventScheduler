@@ -3,8 +3,8 @@ import SignupPage from "./SignupPage";
 import ForgotPassword from "./ForgotPassword";
 
 export default function LoginPage({ onLogin }) {
-  // hooks must be called unconditionally at the top-level
-  const [view, setView] = useState("login"); // login | signup | forgot
+
+  const [view, setView] = useState("login"); 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(true);
@@ -16,7 +16,7 @@ export default function LoginPage({ onLogin }) {
   const canSubmit = emailOk && passwordOk && !isSubmitting;
 
   if (view === "signup") {
-    return <SignupPage onBack={() => setView("login")} />;
+  return <SignupPage onBack={() => setView("login")} onSignupSuccess={onLogin} />;
   }
 
   if (view === "forgot") {
@@ -36,8 +36,7 @@ export default function LoginPage({ onLogin }) {
       // demo delay (replace with real API later)
       await new Promise((r) => setTimeout(r, 800));
 
-      // Simple demo: call onLogin to switch to main app
-      onLogin?.();
+      onLogin?.('student');
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Login failed. Please try again.";
       setError(msg);

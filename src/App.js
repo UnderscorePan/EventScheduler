@@ -4,16 +4,14 @@ import { Calendar, Clock, MapPin, Users, Plus, List } from 'lucide-react';
 
 
 function App() {
-  const [userRole, setUserRole] = useState('student'); // student, event_manager, admin, onsite_manager
-  const [view, setView] = useState('list'); // list or calendar
+  const [userRole, setUserRole] = useState(() => {
+  return sessionStorage.getItem('userRole') || 'student';
+  });
+  const [view, setView] = useState('list'); 
   const [events, setEvents] = useState([])
 
   const [authenticated, setAuthenticated] = useState(() => {
-    try {
-      return localStorage.getItem('auth') === 'true';
-    } catch (e) {
-      return false;
-    }
+  return sessionStorage.getItem('auth') === 'true';
   });
 
   useEffect(() => {
@@ -41,7 +39,7 @@ function App() {
       "Content-Type": "application/x-www-form-urlencoded"
     },
     body: new URLSearchParams({
-      student_id: "S102312"  //TEMP STUDENT ID CHANGE WHEN SESSION IS ADDED
+      student_id: "S102312"  
     }).toString()
   })
     .then(res => res.json())
@@ -171,22 +169,18 @@ function App() {
     );
   };
 
-  const handleLogin = () => {
-    try {
-      localStorage.setItem('auth', 'true');
-    } catch (e) {
-      // ignore
-    }
+  const handleLogin = (role = 'student') => {
+    sessionStorage.setItem('auth', 'true');
+    sessionStorage.setItem('userRole', role);
+    setUserRole(role);
     setAuthenticated(true);
   };
 
   const handleLogout = () => {
-    try {
-      localStorage.removeItem('auth');
-    } catch (e) {
-      // ignore
-    }
+    sessionStorage.removeItem('auth');
+    sessionStorage.removeItem('userRole');
     setAuthenticated(false);
+    setUserRole('student');
   };
 
   if (!authenticated) return <LoginPage onLogin={handleLogin} />;
@@ -210,18 +204,18 @@ function App() {
 
       <div className="container mx-auto px-4 py-6">
         {/* Role Selector */}
+        {/* Current Role Display */}
         <div className="bg-white rounded-lg shadow-md p-4 mb-6">
-          <label className="block text-sm font-semibold mb-2">Select Role:</label>
-          <select
-            value={userRole}
-            onChange={(e) => setUserRole(e.target.value)}
-            className="w-full p-2 border border-gray-300 rounded-lg"
-          >
-            <option value="student">Student/Guest</option>
-            <option value="event_manager">Event Manager</option>
-            <option value="admin">Administrator</option>
-            <option value="onsite_manager">On-site Manager</option>
-          </select>
+          <div className="flex items-center justify-between">
+            <div>
+              <label className="block text-sm font-semibold text-gray-600 mb-1">Current Role:</label>
+              <span className="text-lg font-bold text-blue-600">
+                {userRole === 'student' ? 'Student/Guest' : 
+                userRole === 'event_manager' ? 'Event Manager' :
+                userRole === 'admin' ? 'Administrator' : 'On-site Manager'}
+              </span>
+            </div>
+          </div>
         </div>
 
         {/* View Toggle */}

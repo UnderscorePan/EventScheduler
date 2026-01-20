@@ -7,7 +7,7 @@ const QUESTIONS = [
   "What was the name of your first school?",
 ];
 
-export default function SignupPage({ onBack }) {
+export default function SignupPage({ onBack, onSignupSuccess }) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -17,10 +17,9 @@ export default function SignupPage({ onBack }) {
   const [securityQuestion, setSecurityQuestion] = useState(QUESTIONS[0]);
   const [securityAnswer, setSecurityAnswer] = useState("");
 
-  // no showPassword toggle needed for now
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
-  const [role, setRole] = useState("user");
+  const [role, setRole] = useState("student");
 
   const emailOk = useMemo(() => /\S+@\S+\.\S+/.test(email.trim()), [email]);
   const passwordOk = useMemo(() => password.trim().length >= 6, [password]);
@@ -52,8 +51,7 @@ export default function SignupPage({ onBack }) {
       // demo API delay
       await new Promise((r) => setTimeout(r, 800));
 
-      alert("Account created (demo).");
-      onBack?.();
+      onSignupSuccess?.(role);
     } catch (err) {
       setError(err?.message || "Sign up failed.");
     } finally {
@@ -102,9 +100,10 @@ export default function SignupPage({ onBack }) {
               <div className="max-w-sm">
                 <label className="block text-sm font-medium text-black">Role</label>
                 <select value={role} onChange={(e) => setRole(e.target.value)} className="w-full rounded-xl bg-slate-750/60 border border-slate-800 px-4 py-3 pr-5 outline-none focus:ring-2 focus:ring-slate-400/40 focus:border-slate-700">
-                  <option value="Student">Student</option>
-                  <option value="Admin">Admin</option>
-                  <option value="Manager">Manager</option>
+                  <option value="student">Student/Guest</option>
+                  <option value="event_manager">Event Manager</option>
+                  <option value="admin">Administrator</option>
+                  <option value="onsite_manager">On-site Manager</option>
                 </select>
               </div>
 

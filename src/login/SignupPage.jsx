@@ -48,8 +48,26 @@ export default function SignupPage({ onBack, onSignupSuccess }) {
     try {
       setIsSubmitting(true);
 
-      // demo API delay
-      await new Promise((r) => setTimeout(r, 800));
+      const res = await fetch("http://elec-refill.with.playit.plus:27077/event-api/registeraccount.php", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        email,
+        password,
+        role,
+        securityQuestion,
+        securityAnswer,
+      }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      // backend-controlled error message
+      throw new Error(data.message || "Login failed");
+    }
 
       onSignupSuccess?.(role);
     } catch (err) {

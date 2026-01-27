@@ -33,10 +33,25 @@ export default function LoginPage({ onLogin }) {
     try {
       setIsSubmitting(true);
 
-      // demo delay (replace with real API later)
-      await new Promise((r) => setTimeout(r, 800));
+      const res = await fetch("http://elec-refill.with.playit.plus:27077/event-api/loginaccount.php", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        email,
+        password,
+      }),
+    });
 
-      onLogin?.('student');
+    const data = await res.json();
+
+    if (!res.ok) {
+      // backend-controlled error message
+      throw new Error(data.message || "Login failed");
+    }
+
+      onLogin?.(data.role);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Login failed. Please try again.";
       setError(msg);

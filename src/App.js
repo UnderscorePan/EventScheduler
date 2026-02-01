@@ -4,6 +4,9 @@ import { Calendar, Clock, MapPin, Users, Plus, List } from 'lucide-react';
 
 
 function App() {
+  const [userID, setUserID] = useState(() => {
+  return sessionStorage.getItem('userID');
+  });
   const [userRole, setUserRole] = useState(() => {
   return sessionStorage.getItem('userRole') || 'student';
   });
@@ -33,13 +36,15 @@ function App() {
   const [registeredEvents, setRegisteredEvents] = useState([]);
 
   useEffect(() => {
-  fetch("http://localhost/event-api/registeredevent.php", {
+  if (!userID) return;
+
+  fetch("http://elec-refill.with.playit.plus:27077/event-api/registeredevent.php", {
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded"
     },
     body: new URLSearchParams({
-      student_id: "S102312"  
+      student_id: userID
     }).toString()
   })
     .then(res => res.json())
@@ -48,16 +53,18 @@ function App() {
         setRegisteredEvents(data.eventIds);
       }
     });
-}, []);
+}, [userID]);
 
-  const handleRegister = (eventId) => {
-    fetch("http://localhost/event-api/registerrequest.php", {
+  const handleRegister = (eventId, userID) => {
+    console.log(userID);
+    console.log(userRole);
+    fetch("http://elec-refill.with.playit.plus:27077/event-api/registerrequest.php", {
     method: "POST",
     headers: {
     "Content-Type": "application/x-www-form-urlencoded"
     },
     body: new URLSearchParams({
-    student_id: "S102312",
+    student_id: userID,
     event_id: eventId
     }).toString()
   })
@@ -117,7 +124,7 @@ function App() {
 
         {userRole === 'student' && (
           <button
-            onClick={() => handleRegister(event.id)}
+            onClick={() => handleRegister(event.id, userID)}
             disabled={isRegistered || isFull}
             className={`w-full py-2 px-4 rounded-lg font-semibold transition ${
               isRegistered || isFull
@@ -169,18 +176,22 @@ function App() {
     );
   };
 
-  const handleLogin = (role = 'student') => {
+  const handleLogin = (id, role = 'student') => {
     sessionStorage.setItem('auth', 'true');
+    sessionStorage.setItem('userID', id);
     sessionStorage.setItem('userRole', role);
     setUserRole(role);
+    setUserID(id);
     setAuthenticated(true);
   };
 
   const handleLogout = () => {
     sessionStorage.removeItem('auth');
     sessionStorage.removeItem('userRole');
+    sessionStorage.removeItem('userID');
     setAuthenticated(false);
     setUserRole('student');
+    setUserID('');
   };
 
   if (!authenticated) return <LoginPage onLogin={handleLogin} />;
@@ -266,7 +277,7 @@ function App() {
           </div>
         )}
 
-        {userRole === 'onsite_manager' && (
+        {userRole === 'on_site_manager' && (
           <div className="flex gap-3 mb-6">
             <button className="px-6 py-3 bg-orange-600 text-white rounded-lg font-semibold hover:bg-orange-700 transition">
               Manage Venue Requests

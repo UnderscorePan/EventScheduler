@@ -59,6 +59,7 @@ export default function SignupPage({ onBack, onSignupSuccess }) {
         role,
         securityQuestion,
         securityAnswer,
+        name,
       }),
     });
 
@@ -69,7 +70,7 @@ export default function SignupPage({ onBack, onSignupSuccess }) {
       throw new Error(data.message || "Login failed");
     }
 
-      onSignupSuccess?.(role);
+      onSignupSuccess?.();
     } catch (err) {
       setError(err?.message || "Sign up failed.");
     } finally {
@@ -121,7 +122,7 @@ export default function SignupPage({ onBack, onSignupSuccess }) {
                   <option value="student">Student/Guest</option>
                   <option value="event_manager">Event Manager</option>
                   <option value="admin">Administrator</option>
-                  <option value="onsite_manager">On-site Manager</option>
+                  <option value="on_site_manager">On-site Manager</option>
                 </select>
               </div>
 

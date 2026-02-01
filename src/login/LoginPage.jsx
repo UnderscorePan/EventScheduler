@@ -16,8 +16,13 @@ export default function LoginPage({ onLogin }) {
   const canSubmit = emailOk && passwordOk && !isSubmitting;
 
   if (view === "signup") {
-  return <SignupPage onBack={() => setView("login")} onSignupSuccess={onLogin} />;
-  }
+  return (
+    <SignupPage
+      onBack={() => setView("login")}
+      onSignupSuccess={() => setView("login")}
+    />
+  );
+}
 
   if (view === "forgot") {
     return <ForgotPassword onBack={() => setView("login")} />;
@@ -51,7 +56,7 @@ export default function LoginPage({ onLogin }) {
       throw new Error(data.message || "Login failed");
     }
 
-      onLogin?.(data.role);
+      onLogin(data.user.id, data.role);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Login failed. Please try again.";
       setError(msg);

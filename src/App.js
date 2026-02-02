@@ -181,6 +181,7 @@ useEffect(() => {
 
 
   const [registeredEvents, setRegisteredEvents] = useState([]);
+  const [pendingEvents, setPendingEvents] = useState([]);
 
   useEffect(() => {
   if (!userID) return;
@@ -202,9 +203,27 @@ useEffect(() => {
     });
 }, [userID]);
 
+useEffect(() => {
+  if (!userID) return;
+
+  fetch("http://elec-refill.with.playit.plus:27077/event-api/pendingrequest.php", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded"
+    },
+    body: new URLSearchParams({
+      student_id: userID
+    }).toString()
+  })
+    .then(res => res.json())
+    .then(data => {
+      if (data.success) {
+        setPendingEvents(data.eventIds);
+      }
+    });
+}, [userID]);
+
   const handleRegister = (eventId, userID) => {
-    console.log(userID);
-    console.log(userRole);
   fetch("http://elec-refill.with.playit.plus:27077/event-api/registerrequest.php", {
     method: "POST",
     headers: {
@@ -219,7 +238,7 @@ useEffect(() => {
     .then(data => {
       if (data.success) {
         alert("Registered successfully!");
-        setRegisteredEvents(prev => [...prev, eventId]);
+        setPendingEvents(prev => [...prev, eventId]);
       } else {
         alert(data.message);
       }
@@ -287,6 +306,7 @@ useEffect(() => {
         if (data.success) {
           alert("Venue request approved!");
           fetchPendingVenueRequests();
+          refreshEvents();
         } else {
           alert(data.message || "Failed to approve venue request");
         }
@@ -311,6 +331,7 @@ useEffect(() => {
         if (data.success) {
           alert("Venue request denied!");
           fetchPendingVenueRequests();
+          refreshEvents();
         } else {
           alert(data.message || "Failed to deny venue request");
         }
@@ -319,6 +340,68 @@ useEffect(() => {
         console.error("Error denying venue request:", error);
       });
   };
+
+  const handleDeleteEventRequest = (event) => {
+  const eventId = event.id ?? event.event_id ?? event.eventId;
+
+  if (!eventId) {
+    alert("Invalid event ID");
+    return;
+  }
+
+  const confirmDelete = window.confirm(
+    "Are you sure you want to request deletion of this event?\nThis action requires approval."
+  );
+
+  if (!confirmDelete) return;
+
+  fetch("http://elec-refill.with.playit.plus:27077/event-api/requestdeleteevent.php", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded"
+    },
+    body: new URLSearchParams({
+      event_id: eventId,
+      manager_id: userID
+    }).toString()
+  })
+    .then(res => res.json())
+    .then(data => {
+      if (data.success) {
+        alert("Event Deleted");
+        refreshEvents();
+      } else {
+        alert(data.message || "Failed to request deletion");
+      }
+    })
+    .catch(err => {
+      console.error("Delete request error:", err);
+      alert("Network error");
+    });
+  }
+
+  const handleCancelRegistration = (eventId) => {
+  if (!window.confirm("Cancel your registration?")) return;
+
+  fetch("http://elec-refill.with.playit.plus:27077/event-api/cancelregistration.php", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      student_id: userID,
+      event_id: eventId
+    }).toString()
+  })
+    .then(res => res.json())
+    .then(data => {
+      if (data.success) {
+        alert("Registration cancelled.");
+        setRegisteredEvents(prev => prev.filter(id => id !== eventId));
+        refreshEvents(); // capacity updates
+      } else {
+        alert(data.message || "Failed to cancel registration");
+      }
+    });
+};
 
   const openVenueRequestPopup = () => {
     fetchPendingVenueRequests();
@@ -524,7 +607,7 @@ const checkVenueAvailability = (date, startTime, endTime) => {
       [field]: value
     }));
 
-    // Check venue availability when date or time changes
+    // Check venue availability when date or time changes 
     if (field === 'date' || field === 'time' || field === 'time2' || field === 'venue') {
       const updatedEvent = { ...newEvent, [field]: value };
       checkVenueAvailability(
@@ -835,8 +918,10 @@ if (event.time) {
       });
   };
 
-  const EventCard = ({ event }) => {
-    const isRegistered = registeredEvents.includes(event.id);
+  const EventCard = ({ event, context = 'list' }) => {
+    const eventId = event.id ?? event.event_id ?? event.eventId;
+    const isRegistered = registeredEvents.includes(eventId);
+    const isPending = !isRegistered && pendingEvents.includes(eventId);
     const isFull = event.registered >= event.capacity;
 
     return (
@@ -844,11 +929,21 @@ if (event.time) {
         <div className="flex justify-between items-start mb-3">
           <h3 className={`text-xl font-bold ${darkMode ? 'text-white' : 'text-gray-800'}`}>{event.title}</h3>
           <span className={`px-3 py-1 rounded-full text-sm ${
-            isRegistered ? 'bg-green-100 text-green-700' : 
-            isFull ? 'bg-red-100 text-red-700' : 
-            'bg-blue-100 text-blue-700'
+            isRegistered
+              ? 'bg-green-100 text-green-700'
+              : isPending
+              ? 'bg-yellow-100 text-yellow-700'
+              : isFull
+              ? 'bg-red-100 text-red-700'
+              : 'bg-blue-100 text-blue-700'
           }`}>
-            {isRegistered ? 'Registered' : isFull ? 'Full' : 'Open'}
+            {isRegistered
+              ? 'Registered'
+              : isPending
+              ? 'Pending' 
+              : isFull
+              ? 'Full'
+              : 'Open'}
           </span>
         </div>
         
@@ -878,27 +973,51 @@ if (event.time) {
           </div>
         </div>
 
-        {userRole === 'student' && (
+        {userRole === 'student' && context === 'list' && (
           <button
-            onClick={() => handleRegister(event.id, userID)}
-            disabled={isRegistered || isFull}
+            onClick={() => handleRegister(eventId, userID)}
+            disabled={isRegistered || isPending || isFull}
             className={`w-full py-2 px-4 rounded-lg font-semibold transition ${
-              isRegistered || isFull
+              isRegistered || isPending || isFull
                 ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                 : 'bg-blue-600 text-white hover:bg-blue-700'
             }`}
           >
-            {isRegistered ? 'Already Registered' : isFull ? 'Event Full' : 'Register'}
+            {isRegistered
+              ? 'Registered'
+              : isPending
+              ? 'Pending Approval'
+              : isFull
+              ? 'Event Full'
+              : 'Register'}
+          </button>
+        )}
+
+        {userRole === 'student' && context === 'registered' && (
+          <button
+            onClick={() => handleCancelRegistration(eventId)}
+            className="w-full py-2 px-4 rounded-lg font-semibold bg-red-600 text-white hover:bg-red-700 transition"
+          >
+            Cancel Registration
           </button>
         )}
 
         {userRole === 'event_manager' && (
+          <div className="flex gap-2">
           <button
             onClick={() => openEditEventPopup(event)}
-            className="w-full py-2 px-4 rounded-lg font-semibold bg-purple-600 text-white hover:bg-purple-700 transition"
+            className="w-1/2 py-2 px-4 rounded-lg font-semibold bg-purple-600 text-white hover:bg-purple-700 transition"
           >
             Edit Event
           </button>
+
+          <button
+            onClick={() => handleDeleteEventRequest(event)}
+            className="w-1/2 py-2 px-4 rounded-lg font-semibold bg-red-600 text-white hover:bg-red-700 transition"
+          >
+            Delete
+          </button>
+          </div>
         )}
       </div>
     );
@@ -1512,7 +1631,7 @@ if (event.time) {
                   : 'All Events'}
               </h2>
               {events.map(event => (
-                <EventCard key={event.id} event={event} />
+                <EventCard key={event.id} event={event} context="list" />
               ))}
             </div>
           ) : (
@@ -1526,7 +1645,7 @@ if (event.time) {
               {events
                 .filter(event => registeredEvents.includes(event.id))
                 .map(event => (
-                  <EventCard key={event.id} event={event} />
+                  <EventCard key={event.id} event={event} context="registered" />
                 ))}
             </div>
           )}

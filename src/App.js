@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import LoginPage from './login/LoginPage';
 import { Calendar, Clock, MapPin, Users, Plus, List } from 'lucide-react';
 
@@ -14,20 +14,117 @@ function App() {
   const [events, setEvents] = useState([]);
   const [showRegistrationPopup, setShowRegistrationPopup] = useState(false);
   const [pendingRegistrations, setPendingRegistrations] = useState([]);
+  const [showCreateEventPopup, setShowCreateEventPopup] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [editingEventId, setEditingEventId] = useState(null);
+  const [newEvent, setNewEvent] = useState({
+    eventName: '',
+    about: '',
+    date: '',
+    time: '',
+    time2: '',
+    venue: '',
+    participants: '',
+    manager_id: userID
+  });
+  const [venues, setVenues] = useState([]);
   const [showVenueRequestPopup, setShowVenueRequestPopup] = useState(false);
   const [pendingVenueRequests, setPendingVenueRequests] = useState([]);
   const [showEnableVenuePopup, setShowEnableVenuePopup] = useState(false);
-  const [venues, setVenues] = useState([]);
+  const [venueAvailability, setVenueAvailability] = useState({});
   const [darkMode, setDarkMode] = useState(() => {
     return localStorage.getItem('darkMode') === 'true';
   });
+
+  // Keep a map of local patches for events that were updated locally but
+  // may not immediately appear in the backend events feed. Key is event id.
+  const pendingPatchesRef = useRef({});
+
+  // Persist pending patches to survive a full page reload so the optimistic
+  // UI doesn't permanently revert while server-side persists are delayed.
+  const PENDING_PATCHES_KEY = 'pendingEventPatches';
+
+  // Load persisted patches (if any) into the ref on first render
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(PENDING_PATCHES_KEY);
+      if (raw) {
+        pendingPatchesRef.current = JSON.parse(raw) || {};
+        console.log('Loaded pending patches from localStorage:', pendingPatchesRef.current);
+      }
+    } catch (e) {
+      console.warn('Failed to load pending patches from localStorage', e);
+    }
+  }, []);
+
+  const savePendingPatches = () => {
+    try {
+      localStorage.setItem(PENDING_PATCHES_KEY, JSON.stringify(pendingPatchesRef.current || {}));
+    } catch (e) {
+      console.warn('Failed to save pending patches to localStorage', e);
+    }
+  };
+
+  // Poll the server a few times to confirm the pending patch was persisted.
+  // If confirmed, remove the pending patch. If not, log differences for debugging.
+  const checkPatchConfirmation = (eventKey, patch, attempts = 3, delay = 2000) => {
+    if (!eventKey) return;
+
+    const attemptFetch = (remaining) => {
+  const url = `http://elec-refill.with.playit.plus:27077/event-api/events.php?_=${Date.now()}`;
+  fetch(url, { cache: 'no-store' })
+        .then(res => res.json())
+        .then(data => {
+          const fetched = normalizeEventsResponse(data) || [];
+          const ev = fetched.find(e => String(e.id ?? e.event_id ?? e.eventId) === String(eventKey));
+          if (!ev) {
+            console.warn(`Event ${eventKey} not found in server feed (attempt ${attempts - remaining + 1}).`);
+            if (remaining > 1) setTimeout(() => attemptFetch(remaining - 1), delay);
+            else console.error(`Event ${eventKey} missing after ${attempts} attempts.`);
+            return;
+          }
+
+          const keysToCompare = ['title','description','date','time','endtime','venue','capacity'];
+          const matches = keysToCompare.every(k => {
+            if (patch[k] === undefined) return true;
+            return String(ev[k] ?? '') === String(patch[k] ?? '');
+          });
+
+          if (matches) {
+            // Server confirmed the patch — remove it from pending storage.
+            delete pendingPatchesRef.current[String(eventKey)];
+            savePendingPatches();
+            console.log(`Server confirmed patch for event ${eventKey}. Removed pending patch.`);
+          } else {
+            console.warn(`Server does not match patch for event ${eventKey} (attempt ${attempts - remaining + 1}).`, { server: ev, patch });
+            if (remaining > 1) setTimeout(() => attemptFetch(remaining - 1), delay);
+            else console.error(`Patch for event ${eventKey} not confirmed after ${attempts} attempts.`);
+          }
+        })
+        .catch(err => {
+          console.error('Error checking server confirmation for event', eventKey, err);
+          if (remaining > 1) setTimeout(() => attemptFetch(remaining - 1), delay);
+        });
+    };
+
+    attemptFetch(attempts);
+  };
 
   const [authenticated, setAuthenticated] = useState(() => {
   return sessionStorage.getItem('auth') === 'true';
   });
 
-  useEffect(() => {
-  fetch("http://elec-refill.with.playit.plus:27077/event-api/events.php")
+  
+const normalizeEventsResponse = (data) => {
+  if (Array.isArray(data)) return data;
+  if (data && Array.isArray(data.events)) return data.events;
+  if (data && Array.isArray(data.data)) return data.data;
+  return [];
+};
+
+const refreshEvents = () => {
+  const url = `http://elec-refill.with.playit.plus:27077/event-api/events.php?_=${Date.now()}`;
+  fetch(url, { cache: "no-store" })
     .then(response => {
       if (!response.ok) {
         throw new Error("Failed to fetch events");
@@ -35,12 +132,53 @@ function App() {
       return response.json();
     })
     .then(data => {
-      setEvents(data);
+      const fetched = normalizeEventsResponse(data) || [];
+
+      // Merge any locally-patched events so UI reflects the user's edit
+      // until the backend feed returns the same updated values.
+      const merged = fetched.map(ev => {
+        const evId = ev.id ?? ev.event_id ?? ev.eventId;
+        const patch = pendingPatchesRef.current[String(evId)];
+        if (!patch) return ev;
+
+        // If backend already matches our patch, drop the pending patch.
+        const keysToCompare = ['title','description','date','time','endtime','venue','capacity'];
+        const matches = keysToCompare.every(k => {
+          if (patch[k] === undefined) return true;
+          return String(ev[k] ?? '') === String(patch[k] ?? '');
+        });
+        if (matches) {
+          delete pendingPatchesRef.current[String(evId)];
+          savePendingPatches();
+          return ev;
+        }
+
+        // Otherwise, favor the local patch values so the UI doesn't revert.
+        return { ...ev, ...patch };
+      });
+
+      setEvents(merged);
+
+      // If any pending patches remain after merging, warn the user in console
+      // and optionally show a brief alert so they know the server hasn't
+      // confirmed persistence yet.
+      const remaining = Object.keys(pendingPatchesRef.current || {});
+      if (remaining.length > 0) {
+        console.warn('There are pending event patches not yet confirmed by the server:', remaining);
+        // Don't spam alerts on every refresh; only show once per refresh call.
+        // Use a non-blocking notification — console + optional alert:
+        // alert('Some updates are still pending server confirmation and may be reverted until the server reflects them.');
+      }
     })
     .catch(error => {
-      console.error(error);
+      console.error("Refresh events failed:", error);
     });
-  }, []);
+};
+
+useEffect(() => {
+  refreshEvents();
+}, []);
+
 
   const [registeredEvents, setRegisteredEvents] = useState([]);
 
@@ -67,7 +205,7 @@ function App() {
   const handleRegister = (eventId, userID) => {
     console.log(userID);
     console.log(userRole);
-    fetch("http://elec-refill.with.playit.plus:27077/event-api/registerrequest.php", {
+  fetch("http://elec-refill.with.playit.plus:27077/event-api/registerrequest.php", {
     method: "POST",
     headers: {
     "Content-Type": "application/x-www-form-urlencoded"
@@ -89,7 +227,7 @@ function App() {
   };
 
   const fetchPendingRegistrations = () => {
-    fetch("http://elec-refill.with.playit.plus:27077/event-api/fetchpendingrequestadmin.php")
+  fetch("http://elec-refill.with.playit.plus:27077/event-api/fetchpendingrequestadmin.php")
       .then(res => res.json())
       .then(data => {
         console.log("API Response:", data);
@@ -110,61 +248,8 @@ function App() {
       });
   };
 
-  const handleApproveRegistration = (registrationId) => {
-    fetch("http://elec-refill.with.playit.plus:27077/event-api/approvependingrequestadmin.php", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded"
-      },
-      body: new URLSearchParams({
-        request_id: registrationId
-      }).toString()
-    })
-      .then(res => res.json())
-      .then(data => {
-        if (data.success) {
-          alert("Registration approved!");
-          fetchPendingRegistrations();
-        } else {
-          alert(data.message || "Failed to approve registration");
-        }
-      })
-      .catch(error => {
-        console.error("Error approving registration:", error);
-      });
-  };
-
-  const handleDenyRegistration = (registrationId) => {
-    fetch("http://elec-refill.with.playit.plus:27077/event-api/denypendingrequestadmin.php", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded"
-      },
-      body: new URLSearchParams({
-        request_id: registrationId
-      }).toString()
-    })
-      .then(res => res.json())
-      .then(data => {
-        if (data.success) {
-          alert("Registration denied!");
-          fetchPendingRegistrations();
-        } else {
-          alert(data.message || "Failed to deny registration");
-        }
-      })
-      .catch(error => {
-        console.error("Error denying registration:", error);
-      });
-  };
-
-  const openRegistrationPopup = () => {
-    fetchPendingRegistrations();
-    setShowRegistrationPopup(true);
-  };
-
   const fetchPendingVenueRequests = () => {
-    fetch("http://elec-refill.with.playit.plus:27077/event-api/fetchvenuerequestosm.php")
+  fetch("http://elec-refill.with.playit.plus:27077/event-api/fetchvenuerequestosm.php")
       .then(res => res.json())
       .then(data => {
         console.log("Venue requests API response:", data);
@@ -188,7 +273,7 @@ function App() {
   };
 
   const handleApproveVenueRequest = (requestId) => {
-    fetch("http://elec-refill.with.playit.plus:27077/event-api/approvevenuerequestosm.php", {
+  fetch("http://elec-refill.with.playit.plus:27077/event-api/approvevenuerequestosm.php", {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded"
@@ -212,7 +297,7 @@ function App() {
   };
 
   const handleDenyVenueRequest = (requestId) => {
-    fetch("http://elec-refill.with.playit.plus:27077/event-api/denyvenuerequestosm.php", {
+  fetch("http://elec-refill.with.playit.plus:27077/event-api/denyvenuerequestosm.php", {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded"
@@ -241,7 +326,7 @@ function App() {
   };
 
   const fetchVenues = () => {
-    fetch("http://elec-refill.with.playit.plus:27077/event-api/getalleventvenue.php")
+  fetch("http://elec-refill.with.playit.plus:27077/event-api/getalleventvenue.php")
       .then(res => res.json())
       .then(data => {
         console.log("Venues API response:", data);
@@ -262,7 +347,7 @@ function App() {
   };
 
   const handleToggleVenue = (venueId, currentStatus) => {
-    fetch("http://elec-refill.with.playit.plus:27077/event-api/enablevenue.php", {
+  fetch("http://elec-refill.with.playit.plus:27077/event-api/enablevenue.php", {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded"
@@ -289,6 +374,465 @@ function App() {
   const openEnableVenuePopup = () => {
     fetchVenues();
     setShowEnableVenuePopup(true);
+  };
+
+  const handleApproveRegistration = (registrationId) => {
+  fetch("http://elec-refill.with.playit.plus:27077/event-api/approvependingrequestadmin.php", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      body: new URLSearchParams({
+        request_id: registrationId
+      }).toString()
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          alert("Registration approved!");
+          fetchPendingRegistrations();
+        } else {
+          alert(data.message || "Failed to approve registration");
+        }
+      })
+      .catch(error => {
+        console.error("Error approving registration:", error);
+      });
+  };
+
+  const handleDenyRegistration = (registrationId) => {
+  fetch("http://elec-refill.with.playit.plus:27077/event-api/denypendingrequestadmin.php", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      body: new URLSearchParams({
+        request_id: registrationId
+      }).toString()
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          alert("Registration denied!");
+          fetchPendingRegistrations();
+        } else {
+          alert(data.message || "Failed to deny registration");
+        }
+      })
+      .catch(error => {
+        console.error("Error denying registration:", error);
+      });
+  };
+
+  const openRegistrationPopup = () => {
+    fetchPendingRegistrations();
+    setShowRegistrationPopup(true);
+  };
+
+const checkVenueAvailability = (date, startTime, endTime) => {
+  if (!date || !startTime || !endTime) {
+    setVenueAvailability({});
+    return;
+  }
+
+  /**
+   * Accepts:
+   * - "13:00" (24h)
+   * - "1:00 PM" (12h)
+   */
+  const timeToMinutes = (timeStr) => {
+    if (!timeStr) return null;
+    const trimmed = String(timeStr).trim();
+
+    // 12h: "H:MM AM/PM"
+    const m12 = trimmed.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+    if (m12) {
+      let h = parseInt(m12[1], 10);
+      const m = parseInt(m12[2], 10);
+      const period = m12[3].toUpperCase();
+
+      if (period === 'PM' && h !== 12) h += 12;
+      if (period === 'AM' && h === 12) h = 0;
+
+      return h * 60 + m;
+    }
+
+    // 24h: "HH:MM"
+    const m24 = trimmed.match(/^(\d{1,2}):(\d{2})$/);
+    if (m24) {
+      const h = parseInt(m24[1], 10);
+      const m = parseInt(m24[2], 10);
+      return h * 60 + m;
+    }
+
+    return null;
+  };
+
+  const newStartMinutes = timeToMinutes(startTime);
+  const newEndMinutes = timeToMinutes(endTime);
+
+  if (newStartMinutes === null || newEndMinutes === null) {
+    setVenueAvailability({});
+    return;
+  }
+
+  // Fallback duration if backend only returns a start time
+  const DEFAULT_EVENT_DURATION_MIN = 60;
+
+  const availability = {};
+  venues.forEach((venue) => {
+    const hasConflict = events.some((event) => {
+      if (event.venue !== venue || event.date !== date) return false;
+
+      let eventStartMinutes = null;
+      let eventEndMinutes = null;
+
+      // Legacy: "1:00 PM - 2:00 PM"
+      if (event.time && String(event.time).includes(' - ')) {
+        const [start, end] = String(event.time).split(' - ').map((s) => s.trim());
+        eventStartMinutes = timeToMinutes(start);
+        eventEndMinutes = timeToMinutes(end);
+      } else {
+        // Modern: event.time = "13:00" (and maybe event.endtime)
+        eventStartMinutes = timeToMinutes(event.time);
+        const maybeEnd =
+          (event.endtime ?? event.time2 ?? event.end_time ?? event.endTime ?? null);
+
+        if (maybeEnd) {
+          eventEndMinutes = timeToMinutes(maybeEnd);
+        } else if (eventStartMinutes !== null) {
+          eventEndMinutes = eventStartMinutes + DEFAULT_EVENT_DURATION_MIN;
+        }
+      }
+
+      if (eventStartMinutes === null || eventEndMinutes === null) return false;
+
+      // Overlap check: (newStart < eventEnd) && (newEnd > eventStart)
+      return (newStartMinutes < eventEndMinutes) && (newEndMinutes > eventStartMinutes);
+    });
+
+    availability[venue] = !hasConflict;
+  });
+
+  setVenueAvailability(availability);
+};
+
+
+  const handleCreateEventInputChange = (field, value) => {
+    setNewEvent(prev => ({
+      ...prev,
+      [field]: value
+    }));
+
+    // Check venue availability when date or time changes
+    if (field === 'date' || field === 'time' || field === 'time2' || field === 'venue') {
+      const updatedEvent = { ...newEvent, [field]: value };
+      checkVenueAvailability(
+        updatedEvent.date,
+        updatedEvent.time,
+        updatedEvent.time2
+      );
+    }
+  };
+
+  const handleCreateEvent = () => {
+    // Validate all fields
+    if (!newEvent.eventName || !newEvent.about || !newEvent.date || 
+        !newEvent.time || !newEvent.time2 || !newEvent.venue || 
+        !newEvent.participants) {
+      alert('Please fill in all fields');
+      return;
+    }
+
+    // Check if selected venue is available
+    if (venueAvailability[newEvent.venue] === false) {
+      alert('Selected venue is not available at this time');
+      return;
+    }
+
+  fetch("http://elec-refill.with.playit.plus:27077/event-api/addevent.php", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      body: new URLSearchParams({
+        title: newEvent.eventName,
+        description: newEvent.about,
+        date: newEvent.date,
+        time: newEvent.time,
+        endtime: newEvent.time2,
+        venue: newEvent.venue,
+        capacity: newEvent.participants,
+        manager_id: userID
+      }).toString()
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          alert("Event created successfully!");
+          setShowCreateEventPopup(false);
+          // Reset form
+          setNewEvent({
+            eventName: '',
+            about: '',
+            date: '',
+            time: '',
+            time2: '',
+            venue: '',
+            participants: '',
+            manager_id: userID
+          });
+          setVenueAvailability({});
+          // Refresh events list
+          refreshEvents();
+        } else {
+          alert(data.message || "Failed to create event");
+        }
+      })
+      .catch(error => {
+        console.error("Error creating event:", error);
+        alert("Network error");
+      });
+  };
+
+  const openCreateEventPopup = () => {
+    // Ensure we have the latest venue list before opening the create dialog
+    fetchVenues();
+    setIsEditMode(false);
+    setEditingEventId(null);
+    setNewEvent({
+      eventName: '',
+      about: '',
+      date: '',
+      time: '',
+      time2: '',
+      venue: '',
+      participants: '',
+      manager_id: userID
+    });
+    setVenueAvailability({});
+    setShowCreateEventPopup(true);
+  };
+
+  const closeEventPopup = () => {
+    setShowCreateEventPopup(false);
+    setIsEditMode(false);
+    setEditingEventId(null);
+    setVenueAvailability({});
+    setNewEvent({
+      eventName: '',
+      about: '',
+      date: '',
+      time: '',
+      time2: '',
+      venue: '',
+      participants: '',
+      manager_id: userID
+    });
+  };
+
+  const openEditEventPopup = (event) => {
+    setIsEditMode(true);
+    const id = event.id ?? event.event_id ?? event.eventId;
+    setEditingEventId(id);
+
+    
+// Parse time for edit form.
+// Backend may return:
+// - event.time: "13:00" (and sometimes event.endtime)
+// - legacy: "1:00 PM - 2:00 PM"
+let startTime = '';
+let endTime = '';
+
+const pad2 = (n) => String(n).padStart(2, '0');
+
+const addMinutesTo24h = (hhmm, addMin = 60) => {
+  const m = String(hhmm).trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return '';
+  const h = parseInt(m[1], 10);
+  const mins = parseInt(m[2], 10);
+  const total = (h * 60 + mins + addMin) % (24 * 60);
+  const nh = Math.floor(total / 60);
+  const nm = total % 60;
+  return `${pad2(nh)}:${pad2(nm)}`;
+};
+
+const convertTo24Hour = (time12) => {
+  if (!time12) return '';
+  const parts = String(time12).trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  if (!parts) return String(time12).trim(); // already 24h or unknown
+  let hours = parseInt(parts[1], 10);
+  const minutes = parts[2];
+  const period = parts[3].toUpperCase();
+
+  if (period === 'PM' && hours !== 12) hours += 12;
+  if (period === 'AM' && hours === 12) hours = 0;
+
+  return `${pad2(hours)}:${minutes}`;
+};
+
+if (event.time) {
+  const t = String(event.time).trim();
+  if (t.includes(' - ')) {
+    const [start, end] = t.split(' - ').map((s) => s.trim());
+    startTime = convertTo24Hour(start);
+    endTime = convertTo24Hour(end);
+  } else {
+    startTime = t; // likely "13:00"
+    const maybeEnd = event.endtime ?? event.time2 ?? event.end_time ?? event.endTime ?? '';
+    endTime = maybeEnd ? String(maybeEnd).trim() : addMinutesTo24h(startTime, 60);
+  }
+}
+
+    // Format date to YYYY-MM-DD for the date input
+    let formattedDate = event.date ?? '';
+    if (formattedDate && !formattedDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      // If date is not in YYYY-MM-DD format, try to convert it
+      try {
+        const dateObj = new Date(formattedDate);
+        formattedDate = dateObj.toISOString().split('T')[0];
+      } catch (e) {
+        console.error('Error parsing date:', e);
+      }
+    }
+
+    const eventVenueId = event.venue ?? event.venue_id ?? event.venueId ?? '';
+
+    // Ensure venues list is loaded so the select shows options
+    fetchVenues();
+
+    setNewEvent({
+      eventName: event.title ?? '',
+      about: event.description ?? '',
+      date: formattedDate,
+      time: startTime,
+      time2: endTime,
+      venue: eventVenueId,
+      participants: String(event.capacity ?? ''),
+      manager_id: userID
+    });
+
+    setVenueAvailability({});
+    setShowCreateEventPopup(true);
+  };
+
+  const handleUpdateEvent = () => {
+    if (!editingEventId) {
+      alert("Missing event ID to update.");
+      return;
+    }
+
+    // Validate all fields
+    if (!newEvent.eventName || !newEvent.about || !newEvent.date ||
+        !newEvent.time || !newEvent.time2 || !newEvent.venue ||
+        !newEvent.participants) {
+      alert('Please fill in all fields');
+      return;
+    }
+
+    // Optional: keep your venue availability rule (if you want)
+    if (venueAvailability[newEvent.venue] === false) {
+      alert('Selected venue is not available at this time');
+      return;
+    }
+
+    // Keep 24-hour time format for API (e.g. "13:00")
+    const startTime24 = newEvent.time;
+    const endTime24 = newEvent.time2;
+
+    console.log('Updating event with ID:', editingEventId);
+    
+    const updateParams = {
+      event_id: editingEventId,
+      eventName: newEvent.eventName,    // Try eventName
+      title: newEvent.eventName,         // Also send as title
+      about: newEvent.about,             // Try about
+      description: newEvent.about,       // Also send as description
+      date: newEvent.date,
+      time: startTime24,
+      endtime: endTime24,
+      time2: endTime24,                  // Try time2 as well
+      venue: newEvent.venue,
+      participants: newEvent.participants, // Try participants
+      capacity: newEvent.participants,     // Also send as capacity
+      manager_id: userID
+    };
+    
+    console.log('Update data:', updateParams);
+
+  fetch("http://elec-refill.with.playit.plus:27077/event-api/editevent.php", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      body: new URLSearchParams(updateParams).toString()
+    })
+      .then(res => {
+        console.log('Response status:', res.status);
+        return res.text();
+      })
+      .then(text => {
+        console.log('Raw response:', text);
+        try {
+          const data = JSON.parse(text);
+          console.log('Parsed API response:', data);
+          if (data.success) {
+          alert("Event updated successfully!");
+
+          // Update UI immediately (so you see changes even if events.php is cached)
+          const timeRange = startTime24;
+
+          const patch = {
+            title: newEvent.eventName,
+            description: newEvent.about,
+            date: newEvent.date,
+            time: timeRange,  // Use the full time range format
+            endtime: endTime24,
+            venue: newEvent.venue,
+            capacity: Number(newEvent.participants)
+          };
+
+          try {
+            const key = editingEventId ?? (data.eventId ?? data.event_id);
+            if (key) {
+              pendingPatchesRef.current[String(key)] = patch;
+              savePendingPatches();
+              // Start confirmation polling so we know whether the server
+              // actually persisted the change; this will remove the pending
+              // patch when the server reflects the edit.
+              checkPatchConfirmation(key, patch, 4, 2000);
+            }
+          } catch (e) {
+            // non-fatal
+            console.warn('Failed to record pending patch', e);
+          }
+
+          setEvents(prev =>
+            prev.map(ev => {
+              const evId = ev.id ?? ev.event_id ?? ev.eventId;
+              return String(evId) === String(editingEventId) ? { ...ev, ...patch } : ev;
+            })
+          );
+
+          closeEventPopup();
+          
+          setTimeout(() => {
+            console.log('Refreshing events from database...');
+            refreshEvents();
+          }, 2000);
+        } else {
+          alert(data.message || "Failed to update event");
+          console.error('Update failed:', data);
+        }
+        } catch (e) {
+          console.error('Failed to parse JSON:', e);
+          alert('Server returned invalid response');
+        }
+      })
+      .catch(error => {
+        console.error("Error updating event:", error);
+        alert("Network error");
+      });
   };
 
   const EventCard = ({ event }) => {
@@ -349,7 +893,10 @@ function App() {
         )}
 
         {userRole === 'event_manager' && (
-          <button className="w-full py-2 px-4 rounded-lg font-semibold bg-purple-600 text-white hover:bg-purple-700 transition">
+          <button
+            onClick={() => openEditEventPopup(event)}
+            className="w-full py-2 px-4 rounded-lg font-semibold bg-purple-600 text-white hover:bg-purple-700 transition"
+          >
             Edit Event
           </button>
         )}
@@ -413,6 +960,16 @@ function App() {
   };
 
   if (!authenticated) return <LoginPage onLogin={handleLogin} />;
+
+  // Normalize venue objects (API may return strings or objects). Each option has {id,label,enabled}
+  const venueOptions = (venues || []).map(v => {
+    if (!v) return null;
+    if (typeof v === 'string') return { id: String(v), label: v, enabled: true };
+    const id = v.venueId ?? v.venue_id ?? v.id ?? v.venue ?? v.name ?? '';
+    const label = v.venueName ?? v.venue_name ?? v.name ?? id;
+    const enabled = v.isEnabled ?? v.is_enabled ?? v.enabled ?? true;
+    return { id: String(id), label, enabled };
+  }).filter(Boolean);
 
   return (
     <div className={`min-h-screen ${darkMode ? 'bg-gray-900' : 'bg-gray-100'}`}>
@@ -481,7 +1038,10 @@ function App() {
 
         {/* Action Buttons based on Role */}
         {userRole === 'event_manager' && (
-          <button className="mb-6 flex items-center gap-2 px-6 py-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition">
+          <button 
+            onClick={openCreateEventPopup}
+            className="mb-6 flex items-center gap-2 px-6 py-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition"
+          >
             <Plus className="w-5 h-5" />
             Create New Event
           </button>
@@ -506,18 +1066,214 @@ function App() {
 
         {userRole === 'on_site_manager' && (
           <div className="flex gap-3 mb-6">
-            <button
-              onClick={openVenueRequestPopup}
-              className="px-6 py-3 bg-orange-600 text-white rounded-lg font-semibold hover:bg-orange-700 transition"
-            >
+            <button onClick={openVenueRequestPopup} className="px-6 py-3 bg-orange-600 text-white rounded-lg font-semibold hover:bg-orange-700 transition">
               Manage Venue Requests
             </button>
-            <button 
-              onClick={openEnableVenuePopup}
-              className="px-6 py-3 bg-teal-600 text-white rounded-lg font-semibold hover:bg-teal-700 transition"
-            >
+            <button onClick={openEnableVenuePopup} className="px-6 py-3 bg-teal-600 text-white rounded-lg font-semibold hover:bg-teal-700 transition">
               Enable Venues
             </button>
+          </div>
+        )}
+
+        {/* Create Event Popup */}
+        {showCreateEventPopup && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className={`${darkMode ? 'bg-gray-800 text-white' : 'bg-white'} rounded-lg shadow-xl p-6 max-w-4xl w-full max-h-[90vh] overflow-y-auto`}>
+              <div className="flex justify-between items-center mb-4">
+                <h2 className={`text-2xl font-bold ${darkMode ? 'text-white' : 'text-gray-800'}`}>{isEditMode ? 'Edit Event' : 'Create New Event'}</h2>
+                <button 
+                  onClick={closeEventPopup}
+                  className={`${darkMode ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-gray-700'} text-2xl font-bold`}
+                >
+                  ×
+                </button>
+              </div>
+              
+              <div className="space-y-4">
+                {/* Event Title */}
+                <div>
+                  <label className={`block text-sm font-semibold ${darkMode ? 'text-gray-300' : 'text-gray-700'} mb-2`}>
+                    Event Title *
+                  </label>
+                  <input
+                    type="text"
+                    value={newEvent.eventName}
+                    onChange={(e) => handleCreateEventInputChange('eventName', e.target.value)}
+                    className={`w-full px-4 py-2 border rounded-lg ${
+                      darkMode 
+                        ? 'bg-gray-700 border-gray-600 text-white' 
+                        : 'bg-white border-gray-300 text-gray-900'
+                    } focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                    placeholder="Enter event title"
+                  />
+                </div>
+
+                {/* Description */}
+                <div>
+                  <label className={`block text-sm font-semibold ${darkMode ? 'text-gray-300' : 'text-gray-700'} mb-2`}>
+                    Description *
+                  </label>
+                  <textarea
+                    value={newEvent.about}
+                    onChange={(e) => handleCreateEventInputChange('about', e.target.value)}
+                    rows="4"
+                    className={`w-full px-4 py-2 border rounded-lg ${
+                      darkMode 
+                        ? 'bg-gray-700 border-gray-600 text-white' 
+                        : 'bg-white border-gray-300 text-gray-900'
+                    } focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                    placeholder="Enter event description"
+                  />
+                </div>
+
+                {/* Date */}
+                <div>
+                  <label className={`block text-sm font-semibold ${darkMode ? 'text-gray-300' : 'text-gray-700'} mb-2`}>
+                    Date *
+                  </label>
+                  <input
+                    type="date"
+                    value={newEvent.date}
+                    onChange={(e) => handleCreateEventInputChange('date', e.target.value)}
+                    className={`w-full px-4 py-2 border rounded-lg ${
+                      darkMode 
+                        ? 'bg-gray-700 border-gray-600 text-white' 
+                        : 'bg-white border-gray-300 text-gray-900'
+                    } focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                  />
+                </div>
+
+                {/* Time */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className={`block text-sm font-semibold ${darkMode ? 'text-gray-300' : 'text-gray-700'} mb-2`}>
+                      Start Time *
+                    </label>
+                    <input
+                      type="time"
+                      value={newEvent.time}
+                      onChange={(e) => handleCreateEventInputChange('time', e.target.value)}
+                      className={`w-full px-4 py-2 border rounded-lg ${
+                        darkMode 
+                          ? 'bg-gray-700 border-gray-600 text-white' 
+                          : 'bg-white border-gray-300 text-gray-900'
+                      } focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                    />
+                  </div>
+                  <div>
+                    <label className={`block text-sm font-semibold ${darkMode ? 'text-gray-300' : 'text-gray-700'} mb-2`}>
+                      End Time *
+                    </label>
+                    <input
+                      type="time"
+                      value={newEvent.time2}
+                      onChange={(e) => handleCreateEventInputChange('time2', e.target.value)}
+                      className={`w-full px-4 py-2 border rounded-lg ${
+                        darkMode 
+                          ? 'bg-gray-700 border-gray-600 text-white' 
+                          : 'bg-white border-gray-300 text-gray-900'
+                      } focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                    />
+                  </div>
+                </div>
+
+                {/* Venue */}
+                <div>
+                  <label className={`block text-sm font-semibold ${darkMode ? 'text-gray-300' : 'text-gray-700'} mb-2`}>
+                    Venue *
+                  </label>
+                  <select
+                    value={newEvent.venue}
+                    onChange={(e) => handleCreateEventInputChange('venue', e.target.value)}
+                    className={`w-full px-4 py-2 border rounded-lg ${
+                      darkMode 
+                        ? 'bg-gray-700 border-gray-600 text-white' 
+                        : 'bg-white border-gray-300 text-gray-900'
+                    } focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                  >
+                    <option value="">Select a venue</option>
+                    {venueOptions.map(({ id, label, enabled }) => (
+                      <option 
+                        key={id} 
+                        value={id}
+                        disabled={!enabled || venueAvailability[id] === false}
+                        className={!enabled || venueAvailability[id] === false ? 'text-gray-400' : ''}
+                      >
+                        {label} {(!enabled || venueAvailability[id] === false) ? '(Unavailable)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                  {Object.keys(venueAvailability).length > 0 && (
+                    <div className={`text-sm mt-2 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                      <p>Venue availability for selected date and time:</p>
+                      <ul className="mt-1">
+                        {venueOptions.map(({ id, label }) => (
+                            <li key={id} className={venueAvailability[id] === false ? 'text-red-500' : 'text-green-500'}>
+                              {label}: {venueAvailability[id] === false ? '❌ Unavailable' : '✅ Available'}
+                            </li>
+                          ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+
+                {/* Capacity */}
+                <div>
+                  <label className={`block text-sm font-semibold ${darkMode ? 'text-gray-300' : 'text-gray-700'} mb-2`}>
+                    Capacity *
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={newEvent.participants}
+                    onChange={(e) => handleCreateEventInputChange('participants', e.target.value)}
+                    className={`w-full px-4 py-2 border rounded-lg ${
+                      darkMode 
+                        ? 'bg-gray-700 border-gray-600 text-white' 
+                        : 'bg-white border-gray-300 text-gray-900'
+                    } focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                    placeholder="Enter maximum capacity"
+                  />
+                </div>
+
+                {/* Manager ID (read-only) */}
+                <div>
+                  <label className={`block text-sm font-semibold ${darkMode ? 'text-gray-300' : 'text-gray-700'} mb-2`}>
+                    Manager ID
+                  </label>
+                  <input
+                    type="text"
+                    value={userID}
+                    readOnly
+                    className={`w-full px-4 py-2 border rounded-lg ${
+                      darkMode 
+                        ? 'bg-gray-600 border-gray-600 text-gray-400' 
+                        : 'bg-gray-100 border-gray-300 text-gray-600'
+                    } cursor-not-allowed`}
+                  />
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex gap-3 justify-end mt-6">
+                  <button
+                    onClick={closeEventPopup}
+                    className={`px-6 py-2 rounded-lg font-semibold transition ${
+                      darkMode 
+                        ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' 
+                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                    }`}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={isEditMode ? handleUpdateEvent : handleCreateEvent}
+                    className="px-6 py-2 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition"
+                  >
+                    {isEditMode ? 'Save Changes' : 'Create Event'}
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
@@ -778,6 +1534,7 @@ function App() {
       </div>
     </div>
   );
+
 }
 
 export default App;
